@@ -153,11 +153,11 @@ class PyPinch:
     def shiftTemperatures(self):
         for stream in self.streams:
             if stream['type'] == 'HOT':
-                stream['ss'] = stream['ts'] - self.tmin / 2
-                stream['st'] = stream['tt'] - self.tmin / 2
+                stream['ss'] = stream['ts'] 
+                stream['st'] = stream['tt'] 
             else:
-                stream['ss'] = stream['ts'] + self.tmin / 2
-                stream['st'] = stream['tt'] + self.tmin / 2
+                stream['ss'] = stream['ts'] 
+                stream['st'] = stream['tt'] 
 
         if self._options['debug'] == True:
             print("\nStreams: ")
@@ -165,16 +165,30 @@ class PyPinch:
                 print(stream)
             print("Tmin = {}".format(self.tmin))
 
-
     def constructTemperatureInterval(self):
-        # Take all shifted temperatures and reverse sort them,
-        # removing all duplicates
-        for stream in self.streams:
-            self._temperatures.append(stream['ss'])
-            self._temperatures.append(stream['st'])
+        hot_temperatures = []
+        cold_temperatures = []
 
+        # Collect all temperatures, without shifting them
+        for stream in self.streams:
+            if stream['type'] == 'HOT':
+                hot_temperatures.append(stream['ts'])
+                hot_temperatures.append(stream['tt'])
+            else:  # Assuming the other type is 'COLD'
+                cold_temperatures.append(stream['ts'])
+                cold_temperatures.append(stream['tt'])
+
+        # Remove duplicates and sort in reverse
+        hot_temperatures = list(set(hot_temperatures))
+        cold_temperatures = list(set(cold_temperatures))
+        hot_temperatures.sort(reverse=True)
+        cold_temperatures.sort(reverse=True)
+
+        # Shift the hot temperatures up and cold temperatures down to create intervals
+        self._temperatures = [t + self.tmin for t in hot_temperatures] + \
+                             [t for t in cold_temperatures]
         self._temperatures = list(set(self._temperatures))
-        self._temperatures.sort(reverse = True)
+        self._temperatures.sort(reverse=True)
 
         # Save the stream number of all the streams that pass
         # through each shifted temperature interval

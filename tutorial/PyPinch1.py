@@ -153,11 +153,11 @@ class PyPinch:
     def shiftTemperatures(self):
         for stream in self.streams:
             if stream['type'] == 'HOT':
-                stream['ss'] = stream['ts'] 
-                stream['st'] = stream['tt'] 
+                stream['ss'] = stream['ts'] - self.tmin / 2
+                stream['st'] = stream['tt'] - self.tmin / 2
             else:
-                stream['ss'] = stream['ts'] 
-                stream['st'] = stream['tt'] 
+                stream['ss'] = stream['ts'] + self.tmin / 2
+                stream['st'] = stream['tt'] + self.tmin / 2
 
         if self._options['debug'] == True:
             print("\nStreams: ")
@@ -165,88 +165,47 @@ class PyPinch:
                 print(stream)
             print("Tmin = {}".format(self.tmin))
 
+
     def constructTemperatureInterval(self):
-        # Initialize temperatures with their stream index and type
-        self._temperatures = []
-        for i, stream in enumerate(self.streams):
-            self._temperatures.append((stream['ts'], i, stream['type'], 'supply'))
-            self._temperatures.append((stream['tt'], i, stream['type'], 'target'))
+        # Take all shifted temperatures and reverse sort them,
+        # removing all duplicates
+        for stream in self.streams:
+            self._temperatures.append(stream['ss'])
+            self._temperatures.append(stream['st'])
 
-        # Sort temperatures in descending order
-        self._temperatures.sort(reverse=True, key=lambda x: x[0])
-        #print(self._temperatures)
-        # Create intervals
-        intervals = []
-        temperatures = self._temperatures
-        while temperatures:
-            temp, stream_index, stream_type, temp_type = temperatures.pop(0)
+        self._temperatures = list(set(self._temperatures))
+        self._temperatures.sort(reverse = True)
 
-            # Create interval based on stream type and temperature type
-            if stream_type == 'HOT':
-                if temp_type == 'supply':
-                    t1 = temp
-                    t2 = max(temp - self.tmin, 0)
-                else:  # 'target'
-                    t1 = temp
-                    t2 = max(temp - self.tmin, 0)
-                    
-            else:  # 'COLD'
-                if temp_type == 'supply':
-                    t1 = temp + self.tmin
-                    t2 = temp
-                else:  # 'target'
-                    t1 = temp + self.tmin
-                    t2 = temp
+        # Save the stream number of all the streams that pass
+        # through each shifted temperature interval
+        for i in range(len(self._temperatures) - 1):
+            t1 = self._temperatures[i]
+            t2 = self._temperatures[i + 1]
+            interval = {'t1': t1, 't2': t2, 'streamNumbers': []}
 
+            j = 0
+            for stream in self.streams:
+                if (stream['type'] == 'HOT'):
+                    if (stream['ss'] >= t1 and stream['st'] <= t2):
+                        interval['streamNumbers'].append(j)
+                else:
+                    if (stream['st'] >= t1 and stream['ss'] <= t2):
+                        interval['streamNumbers'].append(j)
+                j = j + 1
 
-            # Ensure interval t1 is always higher than t2
-            t1, t2 = max(t1, t2), min(t1, t2)
+            self.temperatureInterval.append(interval)
 
-            intervals.append({'t1': t1, 't2': t2, 
-                              'streamNumbers_cold': [stream_index] if stream_type == 'COLD' else [], 
-                              'streamNumbers_hot': [stream_index] if stream_type == 'HOT' else []
-                             })
+        if self._options['debug'] == True:
+            print("\nTemperature Intervals: ")
+            i = 0
+            for interval in self.temperatureInterval:
+                print("Interval {} : {}".format(i, interval))
+                i = i + 1
 
-            # Sort intervals
-            intervals.sort(key=lambda x: x['t1'], reverse=True)
-
-            # Assign streams to intervals
-            for interval in intervals:
-                t1, t2 = interval['t1'], interval['t2']
-                for j, stream in enumerate(self.streams):
-                    if stream['type'] == 'HOT':
-                        if stream['ts'] >= t1 and stream['tt'] <= t1:
-                            if j not in interval['streamNumbers_hot']:
-                                interval['streamNumbers_hot'].append(j)
-
-                    elif stream['type'] == 'COLD':
-                        if stream['ts'] <= t2 and stream['tt'] >= t2:
-                            if j not in interval['streamNumbers_cold']:
-                                interval['streamNumbers_cold'].append(j)
-
-        # Remove duplicate intervals
-        unique_intervals = []
-        for interval in intervals:
-            if not any(interval['t1'] == other['t1'] and 
-                       interval['t2'] == other['t2'] and 
-                       set(interval['streamNumbers_cold']) == set(other['streamNumbers_cold']) and 
-                       set(interval['streamNumbers_hot']) == set(other['streamNumbers_hot']) 
-                       for other in unique_intervals):
-                unique_intervals.append(interval)
-
-        intervals = unique_intervals
+        if self._options['draw'] == True:
+            self.drawTemperatureInterval()
 
 
-        # Debugging and Visualization
-        if self._options.get('debug', False):
-            print("\nTemperature Intervals:")
-            for i, interval in enumerate(intervals):
-                print(f"Interval {i}: {interval}")
-
-        if self._options.get('draw', False):
-            self.drawTemperatureInterval(intervals)   
-            
-            
     def drawTemperatureInterval(self):
         fig, ax = plt.subplots()
 
@@ -255,7 +214,7 @@ class PyPinch:
         ax.set_xticklabels([])
 
         xOffset = 50
-        print(self._temperatures)
+
         for temperature in self._temperatures:
             plt.plot([0, xOffset * (self.streams.numberOf + 1)], [temperature, temperature], ':k', alpha=0.8)
 
